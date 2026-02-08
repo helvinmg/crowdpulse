@@ -1,0 +1,21 @@
+{
+  "_comment": "Daily API usage limits. Edit these values for production deployment.",
+
+  "global_limits": {
+    "telegram":  200,
+    "youtube":   500,
+    "twitter":    50,
+    "reddit":    300,
+    "yfinance":  500,
+    "gemini":   1500
+  },
+
+  "per_user_limits": {
+    "_comment": "Applied when a user has their own API keys (from onboarding)",
+    "telegram":  200,
+    "twitter":   100,
+    "reddit":    300
+  },
+
+  "always_global": ["youtube", "yfinance", "gemini"]
+}
