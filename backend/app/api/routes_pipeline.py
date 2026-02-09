@@ -28,8 +28,14 @@ def _sse_event(step: str, progress: int, message: str, done: bool = False):
     return f"data: {data}\n\n"
 
 
+# Realistic delays for test pipeline (logged-in user, live mode OFF)
+_TEST_STEP_DELAY = 4.0       # seconds before each scraping step
+_TEST_PER_ITEM_DELAY = 0.12  # seconds per item (simulates API/network)
+_TEST_STEP_TAIL = 1.5        # seconds after each step message
+
+
 async def _run_test_pipeline(since, until):
-    """Fake pipeline run for test mode — mimics scraping with delays."""
+    """Fake pipeline run for test mode — fewer records, realistic delays (slower run)."""
     from app.models.social_post import SocialPost
     from app.models.sentiment_record import SentimentRecord
     from app.models.market_data import MarketData
@@ -41,28 +47,22 @@ async def _run_test_pipeline(since, until):
 
     db = SessionLocal()
     now = datetime.utcnow()
-    total_steps = 6
-    
-    # Calculate the time span in hours for generating realistic timestamps
-    time_span_hours = (until - since).total_seconds() / 3600
+    time_span_hours = max(1, (until - since).total_seconds() / 3600)
 
     try:
-        # Step 1: Scraping Telegram
-        yield _sse_event("telegram", 10, "Scraping Telegram channels...")
-        await asyncio.sleep(1.5)
+        # Step 1: Scraping Telegram (fewer symbols, fewer posts, with per-item delay)
+        yield _sse_event("telegram", 8, "Scraping Telegram channels...")
+        await asyncio.sleep(_TEST_STEP_DELAY)
         telegram_count = 0
-        sources = ["telegram"]
-        for symbol in SYMBOLS[:15]:
+        for symbol in SYMBOLS[:6]:
             profile = _symbol_profile(symbol)
-            for i in range(random.randint(3, 8)):
+            for i in range(random.randint(1, 4)):
+                await asyncio.sleep(_TEST_PER_ITEM_DELAY)
                 r = random.random()
                 cat = "positive" if r < profile[0] else ("negative" if r < profile[0] + profile[1] else "neutral")
                 comment = f"{symbol} - {random.choice(SAMPLE_COMMENTS[cat])}"
-                # Generate timestamp within the requested date range
                 minutes_ago = random.uniform(0, time_span_hours * 60)
-                posted_at = now - timedelta(minutes=minutes_ago)
-                # Ensure posted_at is within the requested range
-                posted_at = max(since, min(until, posted_at))
+                posted_at = max(since, min(until, now - timedelta(minutes=minutes_ago)))
                 post = SocialPost(
                     source="telegram", symbol=symbol, raw_text=comment,
                     cleaned_text=comment, author=f"tg_user_{random.randint(1,100)}",
@@ -73,24 +73,22 @@ async def _run_test_pipeline(since, until):
                 db.add(post)
                 telegram_count += 1
         db.flush()
-        yield _sse_event("telegram", 20, f"Telegram: {telegram_count} messages scraped")
-        await asyncio.sleep(0.5)
+        yield _sse_event("telegram", 18, f"Telegram: {telegram_count} messages scraped")
+        await asyncio.sleep(_TEST_STEP_TAIL)
 
         # Step 2: Scraping YouTube
-        yield _sse_event("youtube", 30, "Scraping YouTube comments...")
-        await asyncio.sleep(1.5)
+        yield _sse_event("youtube", 25, "Scraping YouTube comments...")
+        await asyncio.sleep(_TEST_STEP_DELAY)
         youtube_count = 0
-        for symbol in SYMBOLS[:10]:
+        for symbol in SYMBOLS[:5]:
             profile = _symbol_profile(symbol)
-            for i in range(random.randint(5, 12)):
+            for i in range(random.randint(2, 6)):
+                await asyncio.sleep(_TEST_PER_ITEM_DELAY)
                 r = random.random()
                 cat = "positive" if r < profile[0] else ("negative" if r < profile[0] + profile[1] else "neutral")
                 comment = f"{symbol} - {random.choice(SAMPLE_COMMENTS[cat])}"
-                # Generate timestamp within the requested date range
                 minutes_ago = random.uniform(0, time_span_hours * 60)
-                posted_at = now - timedelta(minutes=minutes_ago)
-                # Ensure posted_at is within the requested range
-                posted_at = max(since, min(until, posted_at))
+                posted_at = max(since, min(until, now - timedelta(minutes=minutes_ago)))
                 post = SocialPost(
                     source="youtube", symbol=symbol, raw_text=comment,
                     cleaned_text=comment, author=f"yt_user_{random.randint(1,100)}",
@@ -101,24 +99,22 @@ async def _run_test_pipeline(since, until):
                 db.add(post)
                 youtube_count += 1
         db.flush()
-        yield _sse_event("youtube", 40, f"YouTube: {youtube_count} comments scraped")
-        await asyncio.sleep(0.5)
+        yield _sse_event("youtube", 35, f"YouTube: {youtube_count} comments scraped")
+        await asyncio.sleep(_TEST_STEP_TAIL)
 
         # Step 3: Scraping Twitter
-        yield _sse_event("twitter", 45, "Scraping Twitter/X posts...")
-        await asyncio.sleep(1.0)
+        yield _sse_event("twitter", 42, "Scraping Twitter/X posts...")
+        await asyncio.sleep(_TEST_STEP_DELAY)
         twitter_count = 0
-        for symbol in SYMBOLS[:8]:
+        for symbol in SYMBOLS[:4]:
             profile = _symbol_profile(symbol)
-            for i in range(random.randint(2, 6)):
+            for i in range(random.randint(1, 4)):
+                await asyncio.sleep(_TEST_PER_ITEM_DELAY)
                 r = random.random()
                 cat = "positive" if r < profile[0] else ("negative" if r < profile[0] + profile[1] else "neutral")
                 comment = f"{symbol} - {random.choice(SAMPLE_COMMENTS[cat])}"
-                # Generate timestamp within the requested date range
                 minutes_ago = random.uniform(0, time_span_hours * 60)
-                posted_at = now - timedelta(minutes=minutes_ago)
-                # Ensure posted_at is within the requested range
-                posted_at = max(since, min(until, posted_at))
+                posted_at = max(since, min(until, now - timedelta(minutes=minutes_ago)))
                 post = SocialPost(
                     source="twitter", symbol=symbol, raw_text=comment,
                     cleaned_text=comment, author=f"tw_user_{random.randint(1,100)}",
@@ -130,23 +126,21 @@ async def _run_test_pipeline(since, until):
                 twitter_count += 1
         db.flush()
         yield _sse_event("twitter", 50, f"Twitter: {twitter_count} tweets scraped")
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(_TEST_STEP_TAIL)
 
         # Step 3b: Scraping Reddit
-        yield _sse_event("reddit", 52, "Scraping Reddit posts...")
-        await asyncio.sleep(1.0)
+        yield _sse_event("reddit", 55, "Scraping Reddit posts...")
+        await asyncio.sleep(_TEST_STEP_DELAY)
         reddit_count = 0
-        for symbol in SYMBOLS[:10]:
+        for symbol in SYMBOLS[:4]:
             profile = _symbol_profile(symbol)
-            for i in range(random.randint(3, 8)):
+            for i in range(random.randint(1, 4)):
+                await asyncio.sleep(_TEST_PER_ITEM_DELAY)
                 r = random.random()
                 cat = "positive" if r < profile[0] else ("negative" if r < profile[0] + profile[1] else "neutral")
                 comment = f"{symbol} - {random.choice(SAMPLE_COMMENTS[cat])}"
-                # Generate timestamp within the requested date range
                 minutes_ago = random.uniform(0, time_span_hours * 60)
-                posted_at = now - timedelta(minutes=minutes_ago)
-                # Ensure posted_at is within the requested range
-                posted_at = max(since, min(until, posted_at))
+                posted_at = max(since, min(until, now - timedelta(minutes=minutes_ago)))
                 post = SocialPost(
                     source="reddit", symbol=symbol, raw_text=comment,
                     cleaned_text=comment, author=f"rd_user_{random.randint(1,100)}",
@@ -157,12 +151,12 @@ async def _run_test_pipeline(since, until):
                 db.add(post)
                 reddit_count += 1
         db.flush()
-        yield _sse_event("reddit", 58, f"Reddit: {reddit_count} posts scraped")
-        await asyncio.sleep(0.5)
+        yield _sse_event("reddit", 62, f"Reddit: {reddit_count} posts scraped")
+        await asyncio.sleep(_TEST_STEP_TAIL)
 
         # Step 4: Fetching market data
-        yield _sse_event("market", 60, "Fetching market data...")
-        await asyncio.sleep(1.0)
+        yield _sse_event("market", 68, "Fetching market data...")
+        await asyncio.sleep(_TEST_STEP_DELAY)
         for symbol in SYMBOLS:
             base = random.uniform(200, 3000)
             chg = random.uniform(-0.03, 0.03)
@@ -180,14 +174,14 @@ async def _run_test_pipeline(since, until):
                 data_source="test",
             )
             db.merge(record)
+            await asyncio.sleep(0.04)  # slight delay per symbol
         db.flush()
-        yield _sse_event("market", 70, f"Market data: {len(SYMBOLS)} stocks updated")
-        await asyncio.sleep(0.5)
+        yield _sse_event("market", 75, f"Market data: {len(SYMBOLS)} stocks updated")
+        await asyncio.sleep(_TEST_STEP_TAIL)
 
-        # Step 5: Scoring sentiment
-        yield _sse_event("scoring", 75, "Running sentiment analysis (FinBERT)...")
-        await asyncio.sleep(1.0)
-        # Score all unscored posts from this run
+        # Step 5: Scoring sentiment (per-post delay to simulate NLP)
+        yield _sse_event("scoring", 78, "Running sentiment analysis (FinBERT)...")
+        await asyncio.sleep(_TEST_STEP_DELAY)
         scored_ids_sub = db.query(SentimentRecord.post_id).subquery()
         unscored = (
             db.query(SocialPost)
@@ -202,6 +196,7 @@ async def _run_test_pipeline(since, until):
                    "doobega", "barbaad", "risky", "danger", "overvalued",
                    "bubble", "dump", "exit", "stop loss", "red"]
         for post in unscored:
+            await asyncio.sleep(_TEST_PER_ITEM_DELAY)
             text_lower = post.raw_text.lower()
             ph = sum(1 for kw in pos_kw if kw in text_lower)
             nh = sum(1 for kw in neg_kw if kw in text_lower)
@@ -216,14 +211,15 @@ async def _run_test_pipeline(since, until):
             ))
             scored_count += 1
         db.flush()
-        yield _sse_event("scoring", 85, f"Scored {scored_count} posts")
-        await asyncio.sleep(0.5)
+        yield _sse_event("scoring", 88, f"Scored {scored_count} posts")
+        await asyncio.sleep(_TEST_STEP_TAIL)
 
         # Step 6: Computing signals
-        yield _sse_event("signals", 90, "Computing divergence & confidence signals...")
-        await asyncio.sleep(1.0)
+        yield _sse_event("signals", 92, "Computing divergence & confidence signals...")
+        await asyncio.sleep(_TEST_STEP_DELAY)
         signals_count = 0
         for symbol in SYMBOLS:
+            await asyncio.sleep(0.06)
             profile = _symbol_profile(symbol)
             base_div = (profile[0] - profile[1]) * 3.0
             noise = random.gauss(0, 0.6)
@@ -247,8 +243,8 @@ async def _run_test_pipeline(since, until):
             ))
             signals_count += 1
         db.commit()
-        yield _sse_event("signals", 95, f"Computed {signals_count} signals")
-        await asyncio.sleep(0.3)
+        yield _sse_event("signals", 98, f"Computed {signals_count} signals")
+        await asyncio.sleep(_TEST_STEP_TAIL)
 
         total = telegram_count + youtube_count + twitter_count + reddit_count
         yield _sse_event("done", 100,

@@ -1,5 +1,22 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
+// When true, API calls add a realistic delay (logged-in users in test mode only). Demo has no delay.
+let _simulateTestModeDelay = false;
+
+export function setSimulateTestModeDelay(enabled) {
+  _simulateTestModeDelay = enabled;
+}
+
+function _randomDelayMs(min = 500, max = 1400) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+async function _applyTestModeDelay() {
+  if (!_simulateTestModeDelay) return;
+  const ms = _randomDelayMs(600, 1600);
+  await new Promise((r) => setTimeout(r, ms));
+}
+
 function _dateParams(dateRange) {
   if (!dateRange) return "";
   const { start, end } = dateRange;
@@ -34,6 +51,7 @@ async function fetchJSON(path) {
     }
     const data = await res.json();
     console.log("[CrowdPulse] response data:", data);
+    await _applyTestModeDelay();
     return data;
   } catch (err) {
     console.error("[CrowdPulse] fetch failed:", path, err.message);
@@ -61,11 +79,11 @@ export const getDivergenceLatest = (symbol, mode = null) =>
 export const getDivergenceTimeseries = (symbol, hours = 72, dateRange = null, mode = null) =>
   fetchJSON(`/divergence/timeseries/${symbol}?hours=${hours}${_dateParams(dateRange)}${mode ? `&mode=${mode}` : ''}`);
 
-export const getOverview = () =>
-  fetchJSON("/divergence/overview");
+export const getOverview = (mode = null) =>
+  fetchJSON(`/divergence/overview${mode ? `?mode=${mode}` : ''}`);
 
-export const getIndexSummary = (hours = 168, dateRange = null) =>
-  fetchJSON(`/divergence/index-summary?hours=${hours}${_dateParams(dateRange)}`);
+export const getIndexSummary = (hours = 24, dateRange = null, mode = null) =>
+  fetchJSON(`/divergence/index-summary?hours=${hours}${_dateParams(dateRange)}${mode ? `&mode=${mode}` : ''}`);
 
 // Market endpoints
 export const getPriceData = (symbol, days = 5) =>

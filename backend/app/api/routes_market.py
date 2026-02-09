@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.models.market_data import MarketData
 
 def _get_mode(mode):
-    if mode in ("test", "live"):
+    if mode in ("test", "live", "demo"):
         return mode
     from app.main import _data_mode
     return _data_mode

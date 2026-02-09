@@ -49,18 +49,38 @@ function SettingsContent() {
   };
 
   useEffect(() => {
+    if (!token) {
+      setError("Please log in to view settings");
+      setLoading(false);
+      return;
+    }
+    
     fetch(`${API_URL}/onboarding/config`, { headers: authHeaders(token) })
-      .then((r) => r.json())
-      .then((data) => {
-        setConfig(data);
-        if (data.telegram?.channels?.length)
-          setTgChannels(data.telegram.channels);
-        if (data.youtube?.video_ids?.length)
-          setYtVideoIds(data.youtube.video_ids);
-        if (data.twitter?.queries?.length) setTwQueries(data.twitter.queries);
-        if (data.reddit?.subreddits?.length) setRdSubreddits(data.reddit.subreddits);
+      .then((r) => {
+        if (!r.ok) {
+          if (r.status === 401) {
+            setError("Please log in again");
+            return;
+          }
+          throw new Error(`HTTP ${r.status}`);
+        }
+        return r.json();
       })
-      .catch(() => setError("Failed to load config"))
+      .then((data) => {
+        if (data) {
+          setConfig(data);
+          if (data.telegram?.channels?.length)
+            setTgChannels(data.telegram.channels);
+          if (data.youtube?.video_ids?.length)
+            setYtVideoIds(data.youtube.video_ids);
+          if (data.twitter?.queries?.length) setTwQueries(data.twitter.queries);
+          if (data.reddit?.subreddits?.length) setRdSubreddits(data.reddit.subreddits);
+        }
+      })
+      .catch((error) => {
+        console.error("Settings config error:", error);
+        setError("Failed to load config. Please try logging out and back in.");
+      })
       .finally(() => setLoading(false));
   }, [token]);
 

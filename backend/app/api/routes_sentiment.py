@@ -21,7 +21,7 @@ def _parse_since(hours: int, start: Optional[str], end: Optional[str]):
 
 def _get_mode(mode: Optional[str]) -> str:
     """Resolve data_source from query param or server default."""
-    if mode in ("test", "live"):
+    if mode in ("test", "live", "demo"):
         return mode
     from app.main import _data_mode
     return _data_mode

@@ -59,17 +59,30 @@ function DashboardContent() {
   const [selectedSymbol, setSelectedSymbol] = useState("RELIANCE");
   const [dateRange, setDateRange] = useState({ label: "7 Days", hours: 168, start: null, end: null });
   const [refreshKey, setRefreshKey] = useState(0);
-  const [currentMode, setCurrentMode] = useState(isDemo ? "test" : "live");
+  const [currentMode, setCurrentMode] = useState(isDemo ? "demo" : "test");
 
   const handleFetchComplete = useCallback(() => {
-    setDateRange({ label: "Today", hours: 24, start: null, end: null });
+    const newDateRange = { label: "Today", hours: 24, start: null, end: null };
+    setDateRange(newDateRange);
     setRefreshKey((k) => k + 1);
-  }, []);
+    
+    // Trigger refresh for overview page if it's open with current mode and date range
+    window.dispatchEvent(new CustomEvent('refreshOverview', {
+      detail: { mode: currentMode, dateRange: newDateRange }
+    }));
+  }, [currentMode]);
 
-  const handleModeChange = useCallback(() => {
-    // Force charts to re-fetch with new mode data
-    setRefreshKey((k) => k + 1);
-  }, []);
+  const handleModeChange = useCallback((newMode) => {
+    if (newMode) {
+      setCurrentMode(newMode);
+      setRefreshKey((k) => k + 1);
+      
+      // Trigger refresh for overview page if it's open
+      window.dispatchEvent(new CustomEvent('refreshOverview', {
+        detail: { mode: newMode, dateRange }
+      }));
+    }
+  }, [dateRange]);
 
   // Force test mode in demo mode
   useEffect(() => {
@@ -79,6 +92,22 @@ function DashboardContent() {
       });
     }
   }, [isDemo]);
+
+  // Sync data mode from API when logged in (not demo)
+  useEffect(() => {
+    if (!isDemo && user) {
+      import("@/lib/api").then(({ getDataMode }) => {
+        getDataMode().then((res) => setCurrentMode(res.mode ?? "live")).catch(() => {});
+      });
+    }
+  }, [isDemo, user]);
+
+  // Realistic delays for logged-in users in test mode only (demo stays fast)
+  useEffect(() => {
+    const api = import("@/lib/api").then((m) => m.setSimulateTestModeDelay);
+    const enable = !isDemo && !!user && currentMode === "test";
+    api.then((fn) => fn(enable));
+  }, [isDemo, user, currentMode]);
 
   const dashboardContent = (
     <>
@@ -109,12 +138,20 @@ function DashboardContent() {
                 </Link>
               )}
               {!isDemo && (
-                <Link
-                  href="/settings"
-                  className="text-gray-300 hover:text-white transition-colors"
-                >
-                  Settings
-                </Link>
+                <>
+                  <Link
+                    href="/dashboard"
+                    className="text-gray-300 hover:text-white transition-colors"
+                  >
+                    Dashboard
+                  </Link>
+                  <Link
+                    href="/settings"
+                    className="text-gray-300 hover:text-white transition-colors"
+                  >
+                    Settings
+                  </Link>
+                </>
               )}
               {!isDemo && (
                 <button
@@ -150,7 +187,7 @@ function DashboardContent() {
         <Safe><FetchButton onComplete={handleFetchComplete} dateRange={dateRange} /></Safe>
         <Safe><DateFilter value={dateRange} onChange={setDateRange} /></Safe>
         <Link
-          href="/overview"
+          href={`/overview?mode=${currentMode}&hours=${dateRange.hours}${dateRange.start ? `&start=${dateRange.start}` : ''}${dateRange.end ? `&end=${dateRange.end}` : ''}`}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border border-[var(--card-border)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--foreground)] hover:border-[var(--foreground)]/20 transition-all"
         >
           <BarChart3 className="w-4 h-4" />
@@ -163,9 +200,10 @@ function DashboardContent() {
           <Activity className="w-4 h-4" />
           API Usage
         </Link>
-        {!isDemo && <Safe><DataModeToggle onModeChange={handleModeChange} /></Safe>}
+        {!isDemo && <Safe><DataModeToggle onModeChange={handleModeChange} isDemo={isDemo} /></Safe>}
       </div>
 
+      {/* Stats bar shows data for current mode */}
       <Safe key={`stats-${refreshKey}`}><StatsBar dateRange={dateRange} mode={currentMode} /></Safe>
 
       <Safe><ApiLimitBanner /></Safe>
@@ -176,7 +214,7 @@ function DashboardContent() {
           selected={selectedSymbol}
           onSelect={setSelectedSymbol}
         />
-        <Safe key={`conf-${refreshKey}`}><ConfidenceCard symbol={selectedSymbol} /></Safe>
+        <Safe key={`conf-${refreshKey}`}><ConfidenceCard symbol={selectedSymbol} mode={currentMode} /></Safe>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

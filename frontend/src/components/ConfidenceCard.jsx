@@ -5,17 +5,17 @@ import { ShieldCheck } from "lucide-react";
 import { getDivergenceLatest } from "@/lib/api";
 import { cn, confidenceLabel, directionColor, directionBg } from "@/lib/utils";
 
-export default function ConfidenceCard({ symbol }) {
+export default function ConfidenceCard({ symbol, mode = null }) {
   const [signal, setSignal] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    getDivergenceLatest(symbol)
+    getDivergenceLatest(symbol, mode)
       .then((res) => setSignal(res.signal))
       .catch(() => setSignal(null))
       .finally(() => setLoading(false));
-  }, [symbol]);
+  }, [symbol, mode]);
 
   if (loading) {
     return (

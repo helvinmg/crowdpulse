@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { FlaskConical, Wifi } from "lucide-react";
 import { getDataMode, setDataMode } from "@/lib/api";
 
-export default function DataModeToggle({ onModeChange }) {
+export default function DataModeToggle({ onModeChange, isDemo = false }) {
   const [mode, setMode] = useState("test");
   const [loading, setLoading] = useState(false);
   const [justSwitched, setJustSwitched] = useState(false);
@@ -30,6 +30,11 @@ export default function DataModeToggle({ onModeChange }) {
       setLoading(false);
     }
   };
+
+  // Don't show toggle for demo users
+  if (isDemo) {
+    return null;
+  }
 
   return (
     <div className="flex items-center gap-2">

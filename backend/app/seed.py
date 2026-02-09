@@ -110,28 +110,40 @@ _LABEL_SCORE_RANGE = {
 }
 
 NUM_DAYS = 7
-POSTS_PER_SYMBOL_PER_DAY = 40  # ~40 posts/symbol/day → ~14,000 total
+POSTS_PER_SYMBOL_PER_DAY = 40  # ~40 posts/symbol/day → ~14,000 total (test seed)
+
+# Smaller, realistic volume for live seed (charts only; pipeline run is separate)
+NUM_DAYS_LIVE = 2
+POSTS_PER_SYMBOL_PER_DAY_LIVE = 6  # ~50 * 2 * 6 = 600 posts total
 
 
 def seed_sample_data(
-    num_days: int = NUM_DAYS,
-    posts_per_symbol_per_day: int = POSTS_PER_SYMBOL_PER_DAY,
+    num_days: int = None,
+    posts_per_symbol_per_day: int = None,
+    data_source: str = "test",
 ):
-    """Seed the database with 7 days of data for all Nifty 50 symbols."""
+    """Seed the database with sample data for all Nifty 50 symbols.
+    data_source: 'test' (default) or 'live'. Use 'live' to populate data for testing live-mode charts.
+    For live, uses smaller defaults (fewer days, fewer posts) for a realistic amount of data.
+    """
+    if num_days is None:
+        num_days = NUM_DAYS_LIVE if data_source == "live" else NUM_DAYS
+    if posts_per_symbol_per_day is None:
+        posts_per_symbol_per_day = POSTS_PER_SYMBOL_PER_DAY_LIVE if data_source == "live" else POSTS_PER_SYMBOL_PER_DAY
+
     db = SessionLocal()
     try:
-        # Clear old seed data
-        _clear_seed_data(db)
+        _clear_data_by_source(db, data_source)
         db.commit()
 
-        posts_created = _seed_social_posts(db, num_days, posts_per_symbol_per_day)
-        market_created = _seed_market_data(db, num_days)
-        sentiment_created = _seed_sentiment_records(db)
-        signals_created = _seed_divergence_signals(db, num_days)
+        posts_created = _seed_social_posts(db, num_days, posts_per_symbol_per_day, data_source)
+        market_created = _seed_market_data(db, num_days, data_source)
+        sentiment_created = _seed_sentiment_records(db, data_source)
+        signals_created = _seed_divergence_signals(db, num_days, data_source)
         db.commit()
 
         logger.info(
-            f"Seed complete: {posts_created} posts, {sentiment_created} sentiment, "
+            f"Seed complete ({data_source}): {posts_created} posts, {sentiment_created} sentiment, "
             f"{market_created} market, {signals_created} signals"
         )
     except Exception as e:
@@ -142,20 +154,43 @@ def seed_sample_data(
         db.close()
 
 
+def _clear_data_by_source(db, data_source: str):
+    """Remove all rows for the given data_source (test or live).
+    Order matters: delete children before parents to satisfy FK constraints.
+    Sentiment records are deleted by data_source and also any that reference posts we're about to remove.
+    """
+    db.query(DivergenceSignal).filter(DivergenceSignal.data_source == data_source).delete()
+    db.flush()
+    # Delete sentiment by data_source first, then any sentiment pointing at posts we're removing (FK safety)
+    db.query(SentimentRecord).filter(SentimentRecord.data_source == data_source).delete()
+    db.flush()
+    live_post_ids = [r.id for r in db.query(SocialPost.id).filter(SocialPost.data_source == data_source).all()]
+    if live_post_ids:
+        db.query(SentimentRecord).filter(SentimentRecord.post_id.in_(live_post_ids)).delete(synchronize_session=False)
+        db.flush()
+    db.query(MarketData).filter(MarketData.data_source == data_source).delete()
+    db.flush()
+    db.query(SocialPost).filter(SocialPost.data_source == data_source).delete()
+    db.flush()
+    logger.info(f"Cleared existing {data_source} data")
+
+
 def _clear_seed_data(db):
-    """Remove only test data, leave live data intact."""
-    db.query(DivergenceSignal).filter(DivergenceSignal.data_source == "test").delete()
-    db.query(SentimentRecord).filter(SentimentRecord.data_source == "test").delete()
-    db.query(MarketData).filter(MarketData.data_source == "test").delete()
-    db.query(SocialPost).filter(SocialPost.data_source == "test").delete()
-    logger.info("Cleared existing test data")
+    """Remove only test data, leave live data intact. Kept for backward compatibility."""
+    _clear_data_by_source(db, "test")
 
 
-def _seed_social_posts(db, num_days: int, per_symbol_per_day: int) -> int:
+def _seed_social_posts(db, num_days: int, per_symbol_per_day: int, data_source: str = "test") -> int:
     """Create Hinglish social posts spread over num_days for all symbols."""
     now = datetime.utcnow()
     sources = ["telegram", "youtube", "twitter"]
     created = 0
+    if data_source == "test":
+        prefix = "seed"
+    elif data_source == "demo":
+        prefix = "demo_seed"
+    else:
+        prefix = "live_seed"
 
     for symbol in NIFTY_50_SYMBOLS:
         profile = _symbol_profile(symbol)
@@ -182,7 +217,7 @@ def _seed_social_posts(db, num_days: int, per_symbol_per_day: int) -> int:
                 hour_offset = random.uniform(0, 24)
                 posted_at = day_start + timedelta(hours=hour_offset)
 
-                source_id = f"seed_{source}_{symbol}_{day}_{i}"
+                source_id = f"{prefix}_{source}_{symbol}_{day}_{i}"
 
                 post = SocialPost(
                     source=source,
@@ -193,7 +228,7 @@ def _seed_social_posts(db, num_days: int, per_symbol_per_day: int) -> int:
                     source_id=source_id,
                     posted_at=posted_at,
                     ingested_at=posted_at + timedelta(minutes=random.randint(1, 30)),
-                    data_source="test",
+                    data_source=data_source,
                 )
                 db.add(post)
                 created += 1
@@ -203,11 +238,11 @@ def _seed_social_posts(db, num_days: int, per_symbol_per_day: int) -> int:
             db.flush()
 
     db.flush()
-    logger.info(f"Seeded {created} social posts for {len(NIFTY_50_SYMBOLS)} symbols")
+    logger.info(f"Seeded {created} social posts for {len(NIFTY_50_SYMBOLS)} symbols ({data_source})")
     return created
 
 
-def _seed_market_data(db, num_days: int) -> int:
+def _seed_market_data(db, num_days: int, data_source: str = "test") -> int:
     """Create market data for all Nifty 50 symbols over num_days."""
     now = datetime.utcnow()
     created = 0
@@ -241,20 +276,20 @@ def _seed_market_data(db, num_days: int) -> int:
                 volume=volume,
                 delivery_volume=delivery_volume,
                 delivery_pct=round(delivery_pct * 100, 2),
-                data_source="test",
+                data_source=data_source,
             )
             db.merge(record)
             created += 1
             base_price = close_price
 
     db.flush()
-    logger.info(f"Seeded {created} market data records for {len(NIFTY_50_SYMBOLS)} symbols")
+    logger.info(f"Seeded {created} market data records for {len(NIFTY_50_SYMBOLS)} symbols ({data_source})")
     return created
 
 
-def _seed_sentiment_records(db) -> int:
-    """Create pre-scored sentiment records for every social post."""
-    posts = db.query(SocialPost).all()
+def _seed_sentiment_records(db, data_source: str = "test") -> int:
+    """Create pre-scored sentiment records for every social post with the given data_source."""
+    posts = db.query(SocialPost).filter(SocialPost.data_source == data_source).all()
     created = 0
 
     for post in posts:
@@ -291,7 +326,7 @@ def _seed_sentiment_records(db) -> int:
             score=score,
             model_version="finbert-seed",
             scored_at=scored_at,
-            data_source="test",
+            data_source=data_source,
         )
         db.add(record)
         created += 1
@@ -300,11 +335,11 @@ def _seed_sentiment_records(db) -> int:
             db.flush()
 
     db.flush()
-    logger.info(f"Seeded {created} sentiment records")
+    logger.info(f"Seeded {created} sentiment records ({data_source})")
     return created
 
 
-def _seed_divergence_signals(db, num_days: int) -> int:
+def _seed_divergence_signals(db, num_days: int, data_source: str = "test") -> int:
     """Create divergence signals every 4 hours for each symbol over num_days."""
     now = datetime.utcnow()
     created = 0
@@ -366,7 +401,7 @@ def _seed_divergence_signals(db, num_days: int) -> int:
                     data_sufficiency=data_suff,
                     signal_consistency=sig_consist,
                     computed_at=ts,
-                    data_source="test",
+                    data_source=data_source,
                 )
                 db.add(signal)
                 created += 1
@@ -375,5 +410,5 @@ def _seed_divergence_signals(db, num_days: int) -> int:
             db.flush()
 
     db.flush()
-    logger.info(f"Seeded {created} divergence signals for {len(NIFTY_50_SYMBOLS)} symbols")
+    logger.info(f"Seeded {created} divergence signals for {len(NIFTY_50_SYMBOLS)} symbols ({data_source})")
     return created

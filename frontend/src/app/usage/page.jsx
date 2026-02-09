@@ -135,7 +135,7 @@ function UsagePage() {
                     {logs.map((log) => (
                       <tr key={log.id} className="border-b border-[var(--card-border)] hover:bg-white/5">
                         <td className="px-4 py-2 text-xs text-[var(--muted)] whitespace-nowrap">
-                          {log.called_at ? new Date(log.called_at).toLocaleString() : "—"}
+                          {log.called_at ? new Date(log.called_at).toLocaleString() : "-"}
                         </td>
                         <td className={`px-4 py-2 font-medium capitalize ${SERVICE_COLORS[log.service] || ""}`}>
                           {log.service}
@@ -150,14 +150,14 @@ function UsagePage() {
                           </span>
                         </td>
                         <td className="px-4 py-2 text-xs text-[var(--muted)] max-w-[200px] truncate">
-                          {log.endpoint || "—"}
+                          {log.endpoint || "-"}
                         </td>
-                        <td className="px-4 py-2">{log.records_fetched || "—"}</td>
+                        <td className="px-4 py-2">{log.records_fetched || "-"}</td>
                         <td className="px-4 py-2 text-xs">
-                          {log.response_time_ms ? `${log.response_time_ms.toFixed(0)}ms` : "—"}
+                          {log.response_time_ms ? `${log.response_time_ms.toFixed(0)}ms` : "-"}
                         </td>
                         <td className="px-4 py-2 text-xs text-[var(--muted)]">
-                          {log.daily_count != null ? `${log.daily_count}/${log.daily_limit}` : "—"}
+                          {log.daily_count != null ? `${log.daily_count}/${log.daily_limit}` : "-"}
                         </td>
                       </tr>
                     ))}

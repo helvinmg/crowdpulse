@@ -734,7 +734,7 @@ export default function OnboardingPage() {
               disabled={saving}
               className="text-sm text-neutral-500 hover:text-neutral-300 transition"
             >
-              Skip all — use default channels
+              Skip all - use default channels
             </button>
           </div>
         )}

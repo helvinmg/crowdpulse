@@ -104,7 +104,7 @@ def get_stats(
     from app.models.divergence_signal import DivergenceSignal
     
     # Resolve mode
-    if mode in ("test", "live"):
+    if mode in ("test", "live", "demo"):
         ds = mode
     else:
         ds = _data_mode

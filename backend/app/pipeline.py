@@ -88,9 +88,27 @@ def run_seed():
     """Seed sample data for testing the pipeline without live APIs."""
     from app.seed import seed_sample_data
 
-    logger.info("=== Seeding Sample Data ===")
+    logger.info("=== Seeding Sample Data (test) ===")
     seed_sample_data()
     logger.info("=== Seed Complete ===")
+
+
+def run_seed_live():
+    """Seed sample data with data_source=live for testing live-mode charts."""
+    from app.seed import seed_sample_data
+
+    logger.info("=== Seeding Sample Data (live) ===")
+    seed_sample_data(data_source="live")
+    logger.info("=== Live Seed Complete ===")
+
+
+def run_seed_realistic():
+    """Seed realistic test data with natural sentiment patterns."""
+    from app.seed_realistic import seed_realistic_data
+
+    logger.info("=== Seeding Realistic Test Data ===")
+    seed_realistic_data()
+    logger.info("=== Realistic Seed Complete ===")
 
 
 def run_all():
@@ -157,6 +175,8 @@ if __name__ == "__main__":
     parser.add_argument("--score", action="store_true", help="Score sentiment only")
     parser.add_argument("--signals", action="store_true", help="Compute signals only")
     parser.add_argument("--seed", action="store_true", help="Seed sample test data")
+    parser.add_argument("--seed-live", action="store_true", help="Seed sample data with data_source=live (for testing live charts)")
+    parser.add_argument("--seed-realistic", action="store_true", help="Seed realistic test data with natural sentiment patterns")
     parser.add_argument("--status", action="store_true", help="Show pipeline status")
     parser.add_argument("--usage", action="store_true", help="Show API usage for today")
     parser.add_argument("--init-db", action="store_true", help="Initialize database tables")
@@ -166,11 +186,15 @@ if __name__ == "__main__":
         parser.print_help()
         sys.exit(1)
 
-    if args.init_db or args.all or args.seed:
+    if args.init_db or args.all or args.seed or args.seed_live or args.seed_realistic:
         init_db()
 
     if args.seed:
         run_seed()
+    elif args.seed_live:
+        run_seed_live()
+    elif args.seed_realistic:
+        run_seed_realistic()
     elif args.all:
         run_all()
     else:

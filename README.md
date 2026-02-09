@@ -2,7 +2,7 @@
 
 **Near real-time Hinglish sentiment analysis and contrarian signals for the Indian equity market (Nifty 50)**
 
-CrowdPulse scrapes social media chatter (Telegram, YouTube, X/Twitter, Reddit), runs FinBERT-based sentiment analysis on Hinglish text, computes divergence signals by comparing discussion volume against delivery volume, and surfaces contrarian opportunities on a live dashboard.
+CrowdPulse scrapes social media chatter (Telegram, YouTube, X/Twitter, Reddit), runs hybrid sentiment analysis (Gemini for Hinglish, FinBERT for English), computes divergence signals by comparing discussion volume against delivery volume, and surfaces contrarian opportunities on a live dashboard.
 
 ## Project Structure
 
@@ -33,6 +33,7 @@ CrowdPulse/
 │   │   ├── nlp/
 │   │   │   ├── preprocessor.py       # Text cleaning, emoji→text, Devanagari support
 │   │   │   ├── sentiment.py          # FinBERT inference (base or LoRA fine-tuned)
+│   │   │   ├── hybrid_scorer.py      # Hybrid: Gemini for Hinglish, FinBERT for English
 │   │   │   ├── velocity.py           # Rolling-window sentiment velocity (0-100)
 │   │   │   ├── labeler_llm.py        # Google Gemini labeling (free tier)
 │   │   │   ├── labeler_zeroshot.py   # Zero-shot FinBERT labeling (fallback)
@@ -65,12 +66,15 @@ CrowdPulse/
 ├── frontend/
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── page.jsx              # Main dashboard (stock selector, charts, fetch button)
+│   │   │   ├── page.jsx              # Landing page (hero, CTA, links to About, Demo, Login)
+│   │   │   ├── dashboard/page.jsx   # Main stock dashboard (selector, charts, fetch, filters)
 │   │   │   ├── login/page.jsx        # Login / Signup page
 │   │   │   ├── onboarding/page.jsx   # Source setup wizard (Telegram, YouTube, Twitter, Reddit)
 │   │   │   ├── settings/page.jsx     # Edit scraping sources after onboarding
 │   │   │   ├── overview/page.jsx     # Nifty 50 index overview (pie charts, top movers, table)
 │   │   │   ├── usage/page.jsx        # API usage dashboard (progress bars, call logs)
+│   │   │   ├── about/page.jsx        # About Crowd Pulse (product info, features)
+│   │   │   ├── debug/page.jsx        # Debug page (auth status, API test)
 │   │   │   ├── layout.jsx            # Root layout
 │   │   │   ├── providers.jsx         # Client-side providers (AuthProvider)
 │   │   │   └── globals.css           # CSS variables, dark theme
@@ -196,7 +200,7 @@ cp .env.example .env.local   # Set NEXT_PUBLIC_API_URL=http://localhost:8000/api
 npm run dev
 ```
 
-Dashboard at http://localhost:3000
+- Landing at http://localhost:3000 — dashboard at http://localhost:3000/dashboard
 
 ## Authentication & Onboarding
 
@@ -208,15 +212,16 @@ The app requires user signup/login before accessing the dashboard.
 3. All protected endpoints require `Authorization: Bearer <token>` header
 
 ### Onboarding Flow (after first signup)
-New users are redirected to a 3-step setup wizard:
+New users are redirected to a 4-step setup wizard:
 
 | Step | Action | Skip? |
 |------|--------|-------|
 | **1. Telegram** | Enter API ID + Hash + phone → OTP verification → save session | Yes |
 | **2. YouTube** | Add video IDs to scrape comments from | Yes |
 | **3. Twitter** | Add hashtags / search queries to track | Yes |
+| **4. Reddit** | Add subreddits (and optional API credentials) to scrape | Yes |
 
-- **Skip all** → uses hardcoded default channels (5 Telegram channels, 5 YouTube videos, 3 Twitter queries)
+- **Skip all** → uses hardcoded default channels (5 Telegram channels, 5 YouTube videos, 3 Twitter queries, default Indian stock subreddits)
 - Settings can be changed anytime at `/settings`
 - Per-user config stored in `user_configs` table with fallback to defaults
 
@@ -227,7 +232,7 @@ The app has two data modes, toggled from the dashboard or via API:
 | Mode | Description |
 |------|-------------|
 | **Test** (default) | Uses seeded sample data. No external API calls. Safe for development. |
-| **Live** | Calls real scrapers (Telegram, YouTube, X, yfinance). Requires API keys in `.env`. |
+| **Live** | Calls real scrapers (Telegram, YouTube, X, Reddit, yfinance). Requires API keys in `.env`. |
 
 - Toggle via dashboard: click the **Test / Live** toggle button
 - Toggle via API: `POST /api/v1/data-mode?mode=live`
@@ -242,8 +247,9 @@ Every external API call is tracked with daily limits to stay within free tiers:
 | Telegram | 200 | Telethon (generous, self-capped) |
 | YouTube | 500 | Scraper, no API key needed |
 | Twitter/X | 50 | Free tier is very limited |
+| Reddit | 300 | PRAW (OAuth app at reddit.com/prefs/apps) |
 | yfinance | 500 | Unofficial, polite cap |
-| Gemini | 1,500 | Free tier for labeling |
+| Gemini | 1,500 | Free tier for labeling (hybrid scorer) |
 
 - Usage is persisted to `backend/data/api_usage.json` and the `api_usage_logs` DB table
 - Calls are **blocked** (not just logged) when limits are exceeded
@@ -252,11 +258,11 @@ Every external API call is tracked with daily limits to stay within free tiers:
 ## Pipeline Architecture
 
 ```
-Layer 1: Ingestion     Telegram → YouTube → X/Twitter → yfinance
+Layer 1: Ingestion     Telegram → YouTube → X/Twitter → Reddit → yfinance
             ↓
 Layer 2: Transform     Clean text, emoji→text, URL/mention removal, Devanagari support
             ↓
-Layer 3: NLP           FinBERT sentiment scoring (batch, LoRA fine-tuned if available)
+Layer 3: NLP           Hybrid scoring (Gemini for Hinglish, FinBERT for English); LoRA fine-tune optional
                        + rolling-window velocity computation (5m / 60m / 1440m)
             ↓
 Layer 4: Engine        Divergence: z-score(discussion_vol) - z-score(delivery_vol)
@@ -267,7 +273,7 @@ Layer 5: Storage       PostgreSQL or MySQL
                                divergence_signals, api_usage_logs, users, user_configs
             ↓
 Layer 6: Dashboard     Next.js 14 + Recharts
-                       Pages: /login, /onboarding, / (dashboard), /overview, /usage, /settings
+                       Pages: / (landing), /dashboard, /login, /onboarding, /overview, /usage, /settings, /about, /debug
                        Features: JWT auth, onboarding wizard, SSE pipeline, date filter, test/live toggle
 ```
 
@@ -344,7 +350,7 @@ All sentiment endpoints accept `?hours=`, `?start=`, `?end=`, and `?mode=` query
 | `divergence_signals` | symbol, divergence_score, divergence_direction (hype/panic/neutral), sentiment_velocity, confidence_score, model_certainty, data_sufficiency, signal_consistency, data_source |
 | `api_usage_logs` | service, endpoint, status (success/blocked/error), response_time_ms, records_fetched, daily_count, daily_limit |
 | `users` | email (unique), hashed_password, name, is_active, onboarding_complete |
-| `user_configs` | user_id (FK), telegram_api_id/hash/phone/session_data/validated, telegram_channels (JSON), youtube_video_ids (JSON), twitter_queries (JSON), use_defaults |
+| `user_configs` | user_id (FK), telegram_api_id/hash/phone/session_data/validated, telegram_channels (JSON), youtube_video_ids (JSON), twitter_queries (JSON), reddit_subreddits (JSON), reddit_client_id/secret, use_defaults |
 
 ## Labeling & Fine-Tuning
 
@@ -374,7 +380,12 @@ Fine-tuned model saved to `models/finbert-hinglish/` and auto-loaded by the sent
 
 ## Frontend Pages
 
-### `/` — Stock Dashboard
+### `/` — Landing Page
+- Hero section with app description and CTA
+- Links to **About**, **Demo** (/dashboard?demo=true), and **Login**
+- Navigation bar with Crowd Pulse branding
+
+### `/dashboard` — Stock Dashboard
 - **Stock selector** dropdown (all Nifty 50 symbols)
 - **Sentiment score chart** (timeseries line chart)
 - **Sentiment velocity chart** (area chart, 0-100 scale)
@@ -403,15 +414,24 @@ Fine-tuned model saved to `models/finbert-hinglish/` and auto-loaded by the sent
 ### `/login` — Login / Signup
 - Toggle between login and signup forms
 - Email + password authentication
-- Auto-redirects to `/onboarding` for new users, `/` for returning users
+- Auto-redirects to `/onboarding` for new users, `/dashboard` for returning users
 
 ### `/onboarding` — Source Setup Wizard
-- 3-step wizard: Telegram → YouTube → Twitter
+- 4-step wizard: Telegram → YouTube → Twitter → Reddit
 - Telegram: API credentials + OTP verification + custom channels
 - YouTube: Add video IDs to scrape
 - Twitter: Add search queries / hashtags
+- Reddit: Add subreddits (and optional API credentials)
 - Skip individual steps or skip all (uses hardcoded defaults)
 - Progress bar showing completion
+
+### `/about` — About Crowd Pulse
+- Product overview, features, and tech stack
+- Links back to landing and dashboard
+
+### `/debug` — Debug Page
+- Auth status (user, token presence)
+- API test (e.g. sentiment timeseries) for development
 
 ### `/settings` — Edit Sources
 - View and update Telegram channels, YouTube video IDs, Twitter queries
@@ -425,11 +445,11 @@ Fine-tuned model saved to `models/finbert-hinglish/` and auto-loaded by the sent
 | API | FastAPI 0.115, Pydantic v2, Uvicorn |
 | Auth | bcrypt, python-jose (JWT), HTTPBearer |
 | Task Queue | Celery 5.4 + Redis 5.1 (optional) |
-| NLP | FinBERT (ProsusAI/finbert) + LoRA (PEFT 0.13), SpaCy 3.8, NLTK 3.9, emoji |
+| NLP | Hybrid scorer (Gemini for Hinglish, FinBERT for English), FinBERT + LoRA (PEFT 0.13), SpaCy 3.8, NLTK 3.9, emoji |
 | Labeling | Google Gemini API (google-generativeai 0.8) |
 | Database | PostgreSQL (psycopg2) or MySQL (PyMySQL) via SQLAlchemy 2.0 + Alembic |
 | Data | pandas, numpy, yfinance, scikit-learn |
-| Ingestion | Telethon (Telegram), youtube-comment-downloader, Tweepy (Twitter/X) |
+| Ingestion | Telethon (Telegram), youtube-comment-downloader, Tweepy (Twitter/X), PRAW (Reddit) |
 | Frontend | Next.js 14 (App Router), React 18, Tailwind CSS 3.4, Recharts 2.12, Lucide React |
 | Logging | Loguru |
 | Hosting | AWS EC2 (backend), Vercel (frontend) |

@@ -93,7 +93,7 @@ function SentimentPie({ data }) {
 function IndexDivergenceChart({ data }) {
   return (
     <div className="rounded-lg border border-[var(--card-border)] bg-[var(--card)] p-4">
-      <h3 className="text-sm font-semibold mb-3">Nifty 50 — Average Divergence Over Time</h3>
+      <h3 className="text-sm font-semibold mb-3">Nifty 50 - Average Divergence Over Time</h3>
       <ResponsiveContainer width="100%" height={280}>
         <AreaChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
@@ -111,7 +111,7 @@ function IndexDivergenceChart({ data }) {
 function IndexVolumeVelocityChart({ data }) {
   return (
     <div className="rounded-lg border border-[var(--card-border)] bg-[var(--card)] p-4">
-      <h3 className="text-sm font-semibold mb-3">Nifty 50 — Discussion Volume & Avg Velocity</h3>
+      <h3 className="text-sm font-semibold mb-3">Nifty 50 - Discussion Volume & Avg Velocity</h3>
       <ResponsiveContainer width="100%" height={280}>
         <BarChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
@@ -154,7 +154,7 @@ function TopMovers({ title, icon: Icon, stocks, color }) {
               <td className={cn("px-4 py-2 font-semibold", color)}>{s.divergence_score?.toFixed(2)}</td>
               <td className="px-4 py-2">{s.sentiment_velocity?.toFixed(1)}</td>
               <td className="px-4 py-2">{s.discussion_volume}</td>
-              <td className="px-4 py-2">{s.confidence_score ? `${(s.confidence_score * 100).toFixed(0)}%` : "—"}</td>
+              <td className="px-4 py-2">{s.confidence_score ? `${(s.confidence_score * 100).toFixed(0)}%` : "-"}</td>
             </tr>
           ))}
         </tbody>
@@ -196,10 +196,10 @@ function FullOverviewTable({ stocks, onSelect }) {
                   <td className={cn("px-4 py-2 font-semibold uppercase", directionColor(s.divergence_direction))}>
                     {s.divergence_direction}
                   </td>
-                  <td className="px-4 py-2">{s.divergence_score?.toFixed(2) ?? "—"}</td>
-                  <td className="px-4 py-2">{s.sentiment_velocity?.toFixed(1) ?? "—"}</td>
-                  <td className="px-4 py-2">{s.discussion_volume ?? "—"}</td>
-                  <td className="px-4 py-2">{s.confidence_score ? `${(s.confidence_score * 100).toFixed(0)}%` : "—"}</td>
+                  <td className="px-4 py-2">{s.divergence_score?.toFixed(2) ?? "-"}</td>
+                  <td className="px-4 py-2">{s.sentiment_velocity?.toFixed(1) ?? "-"}</td>
+                  <td className="px-4 py-2">{s.discussion_volume ?? "-"}</td>
+                  <td className="px-4 py-2">{s.confidence_score ? `${(s.confidence_score * 100).toFixed(0)}%` : "-"}</td>
                 </tr>
               ))}
             </tbody>
@@ -223,17 +223,62 @@ function OverviewPage() {
   const [stocks, setStocks] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+  
+  // Get mode and date range from URL parameters
+  const [mode, setMode] = useState("test");
+  const [dateRange, setDateRange] = useState({ hours: 168, start: null, end: null });
+
+  // Parse URL parameters on mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlMode = urlParams.get('mode') || 'test';
+    const urlHours = parseInt(urlParams.get('hours')) || 168;
+    const urlStart = urlParams.get('start');
+    const urlEnd = urlParams.get('end');
+    
+    setMode(urlMode);
+    setDateRange({ hours: urlHours, start: urlStart, end: urlEnd });
+  }, []);
+
+  // Listen for refresh events from dashboard
+  useEffect(() => {
+    const handleRefresh = (event) => {
+      // If the event includes mode and dateRange data, update them
+      if (event.detail) {
+        setMode(event.detail.mode || mode);
+        setDateRange(event.detail.dateRange || dateRange);
+      }
+      setRefreshKey(prev => prev + 1);
+    };
+
+    // Listen for custom refresh event
+    window.addEventListener('refreshOverview', handleRefresh);
+    
+    // Check URL parameter for refresh trigger
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('refresh') === 'true') {
+      handleRefresh();
+      // Clean up URL parameter
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
+    return () => {
+      window.removeEventListener('refreshOverview', handleRefresh);
+    };
+  }, [mode, dateRange]);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([getOverview(), getIndexSummary(168)])
+    // Use dynamic mode and date range from URL parameters
+    Promise.all([getOverview(mode), getIndexSummary(dateRange.hours, dateRange, mode)])
       .then(([ov, idx]) => {
         setStocks(ov.stocks || []);
         setSummary(idx);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshKey, mode, dateRange]);
 
   const timeseriesData = (summary?.index_timeseries || []).map((d) => ({
     ...d,
@@ -254,10 +299,18 @@ function OverviewPage() {
             Back to Dashboard
           </Link>
         </div>
-        <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
-          <Activity className="w-6 h-6 text-brand-500" />
-          Nifty 50 Overview
-        </h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
+            <Activity className="w-6 h-6 text-brand-500" />
+            Nifty 50 Overview
+          </h1>
+          <div className="flex items-center gap-2 text-xs text-[var(--muted)] bg-[var(--card)] px-3 py-1 rounded-lg border border-[var(--card-border)]">
+            <span className="capitalize">{mode}</span>
+            <span>•</span>
+            <span>{dateRange.hours}h</span>
+            {dateRange.start && <span>• Custom Range</span>}
+          </div>
+        </div>
       </div>
 
       {loading ? (
